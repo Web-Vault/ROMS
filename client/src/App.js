@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import CustomerView from './pages/CustomerView';
 import ManagerDashboard from './pages/ManagerDashboard';
+import ManagerLogin from './pages/ManagerLogin';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
 
@@ -144,6 +145,16 @@ function App() {
   );
 
   const [gstRate, setGstRate] = useState(0.05);
+  const [isManagerAuthenticated, setIsManagerAuthenticated] = useState(false);
+  const managerAccounts = [
+    { email: 'manager@example.com', password: 'secret123', name: 'Manager' }
+  ];
+  const loginManager = (email, password) => {
+    const ok = managerAccounts.some(acc => acc.email === email && acc.password === password);
+    setIsManagerAuthenticated(ok);
+    return ok;
+  };
+  const logoutManager = () => setIsManagerAuthenticated(false);
 
   const contextValue = {
     orders,
@@ -153,7 +164,10 @@ function App() {
     tables,
     setTables,
     gstRate,
-    setGstRate
+    setGstRate,
+    isManagerAuthenticated,
+    loginManager,
+    logoutManager
   };
 
   return (
@@ -163,6 +177,7 @@ function App() {
           <Routes>
             <Route path="/table/:tableId" element={<CustomerView />} />
             <Route path="/manager/*" element={<ManagerDashboard />} />
+            <Route path="/login" element={<ManagerLogin />} />
             <Route path="/" element={<Navigate to="/manager/dashboard" replace />} />
           </Routes>
           <Toaster position="top-right" />

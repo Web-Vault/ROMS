@@ -1,18 +1,23 @@
-import React from 'react';
+import React, { useContext, useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 // import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 // import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { LayoutDashboard, UtensilsCrossed, QrCode, ChefHat, Menu as MenuIcon, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, UtensilsCrossed, QrCode, ChefHat, Menu as MenuIcon, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import Dashboard from '../components/manager/Dashboard';
 import OrdersView from '../components/manager/OrdersView';
 import MenuManagement from '../components/manager/MenuManagement';
 import TableManagement from '../components/manager/TableManagement';
 import Settings from '../components/manager/Settings';
+import { AppContext } from '../App';
 
 const ManagerDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isManagerAuthenticated, logoutManager } = useContext(AppContext);
+  useEffect(() => {
+    if (!isManagerAuthenticated) navigate('/login', { replace: true });
+  }, [isManagerAuthenticated, navigate]);
   
   const currentPath = location.pathname.split('/').pop() || 'dashboard';
   
@@ -38,6 +43,19 @@ const ManagerDashboard = () => {
                 <h1 className="text-2xl font-bold">Manager Dashboard</h1>
                 <p className="text-sm text-muted-foreground">Restaurant Management System</p>
               </div>
+            </div>
+            <div className="flex items-center">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  logoutManager();
+                  navigate('/login', { replace: true });
+                }}
+                className="gap-2"
+                aria-label="Logout">
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
             </div>
           </div>
           
