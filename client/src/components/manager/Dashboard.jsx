@@ -8,12 +8,22 @@ const Dashboard = () => {
   const { orders, menuItems, tables } = useContext(AppContext);
   
   // Calculate stats
-  const totalOrders = orders.length;
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
   const completedOrders = orders.filter(o => o.status === 'completed').length;
-  const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
   const occupiedTables = tables.filter(t => t.status === 'occupied').length;
   const availableMenuItems = menuItems.filter(i => i.available).length;
+  
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const dayOrders = orders.filter(o => new Date(o.timestamp) >= startOfDay);
+  const dayRevenue = dayOrders.reduce((sum, o) => sum + o.total, 0);
+  const startOfWeek = new Date();
+  const dayIdx = startOfWeek.getDay();
+  const diffToMonday = (dayIdx + 6) % 7;
+  startOfWeek.setDate(startOfWeek.getDate() - diffToMonday);
+  startOfWeek.setHours(0, 0, 0, 0);
+  const weekOrders = orders.filter(o => new Date(o.timestamp) >= startOfWeek);
+  const weekRevenue = weekOrders.reduce((sum, o) => sum + o.total, 0);
   
   // Get recent orders
   const recentOrders = [...orders].sort((a, b) => 
@@ -39,15 +49,17 @@ const Dashboard = () => {
   
   const stats = [
     {
-      title: 'Total Revenue',
-      value: `$${totalRevenue.toFixed(2)}`,
+      title: 'Revenue (Today)',
+      value: `$${dayRevenue.toFixed(2)}`,
+      sub: `This week: $${weekRevenue.toFixed(2)}`,
       icon: DollarSign,
       color: 'text-success',
       bgColor: 'bg-success/10'
     },
     {
-      title: 'Total Orders',
-      value: totalOrders,
+      title: 'Orders (Today)',
+      value: dayOrders.length,
+      sub: `This week: ${weekOrders.length}`,
       icon: ShoppingBag,
       color: 'text-primary',
       bgColor: 'bg-primary/10'
@@ -99,6 +111,9 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold">{stat.value}</div>
+                {stat.sub && (
+                  <div className="text-xs text-muted-foreground mt-1">{stat.sub}</div>
+                )}
               </CardContent>
             </Card>
           );

@@ -6,12 +6,166 @@ import { Badge } from '../ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 import { Clock, CheckCircle2, ChefHat, TrendingUp } from 'lucide-react';
+import { Input } from '../ui/input';
 
 const OrdersView = () => {
-  const { orders, setOrders } = useContext(AppContext);
+  const { orders, setOrders, gstRate } = useContext(AppContext);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const formatCurrency = (n) => `$${n.toFixed(2)}`;
+  const calculateTotals = (order) => {
+    const subtotal = order.total;
+    const gst = subtotal * gstRate;
+    const grand = subtotal + gst;
+    return { subtotal, gst, grand };
+  };
+  const generateInvoiceHtml = (order) => {
+    const { subtotal, gst, grand } = calculateTotals(order);
+    const dateStr = new Date(order.timestamp).toLocaleString();
+    const itemsHtml = order.items.map(i => `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #eee">${i.name}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${i.quantity}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${formatCurrency(i.price)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${formatCurrency(i.price * i.quantity)}</td>
+      </tr>
+    `).join('');
+    return `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Invoice #${order.id}</title>
+          <style>
+            body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #faf6f3; color: #2b1f14; }
+            .container { max-width: 720px; margin: 40px auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 10px 25px rgba(217,107,42,0.08); }
+            .header { text-align:center; margin-bottom: 16px; }
+            .title { font-size: 24px; font-weight: 700; }
+            .sub { color: #6b5a4d; font-size: 13px; }
+            .badge { display:inline-block; padding:4px 10px; border-radius: 999px; background: rgba(217,107,42,0.1); color: #d96b2a; font-weight: 600; margin-top:8px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th { text-align: left; font-size: 13px; color: #6b5a4d; padding: 8px; border-bottom: 1px solid #eee; }
+            .totals { margin-top: 16px; padding-top: 10px; border-top: 1px solid #eee; }
+            .row { display:flex; justify-content: space-between; margin: 4px 0; }
+            .grand { font-weight: 700; font-size: 18px; color: #d96b2a; }
+            .footer { text-align:center; margin-top: 24px; color: #6b5a4d; font-size: 12px; }
+            .brand { font-weight: 700; color: #d96b2a; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="title"><span class="brand">ROMS</span> Invoice</div>
+              <div class="sub">Order #${order.id} • Table #${order.tableNumber} • ${dateStr}</div>
+              <div class="badge">Completed</div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th style="text-align:center">Qty</th>
+                  <th style="text-align:right">Price</th>
+                  <th style="text-align:right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+            <div class="totals">
+              <div class="row"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
+              <div class="row"><span>GST (5%)</span><span>${formatCurrency(gst)}</span></div>
+              <div class="row grand"><span>Grand Total</span><span>${formatCurrency(grand)}</span></div>
+            </div>
+            <div class="footer">Thank you for dining with us</div>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+  // generateInvoiceHtml retained for potential future HTML preview; not used currently.
+  const downloadInvoice = (order) => {
+    const doc = new jsPDF();
+    const dateStr = new Date(order.timestamp).toLocaleString();
+    doc.setFontSize(16);
+    doc.text('ROMS Invoice', 105, 15, { align: 'center' });
+    doc.setFontSize(11);
+    doc.text(`Order #${order.id} • Table #${order.tableNumber}`, 105, 22, { align: 'center' });
+    doc.text(`${dateStr}`, 105, 28, { align: 'center' });
+    const gst = order.total * gstRate;
+    const grand = order.total + gst;
+    const rows = order.items.map(i => [i.name, String(i.quantity), `$${i.price.toFixed(2)}`, `$${(i.price * i.quantity).toFixed(2)}`]);
+    doc.autoTable({
+      startY: 36,
+      head: [['Item','Qty','Price','Amount']],
+      body: rows
+    });
+    const endY = doc.lastAutoTable.finalY || 36;
+    doc.text(`Subtotal: $${order.total.toFixed(2)}`, 14, endY + 10);
+    doc.text(`GST (${(gstRate*100).toFixed(0)}%): $${gst.toFixed(2)}`, 14, endY + 16);
+    doc.setFontSize(13);
+    doc.text(`Grand Total: $${grand.toFixed(2)}`, 14, endY + 24);
+    doc.save(`invoice-${order.id}.pdf`);
+    toast.success(`Invoice PDF downloaded for Order #${order.id}`);
+  };
+  
+  const addSampleOrders = () => {
+    const now = Date.now();
+    const sample = [
+      {
+        id: 101,
+        tableNumber: 2,
+        timestamp: new Date(now - 1000 * 60 * 60 * 24).toISOString(),
+        status: 'pending',
+        total: 37.98,
+        items: [
+          { name: 'Grilled Salmon', price: 18.99, quantity: 2, image: 'https://images.unsplash.com/photo-1485921325833-c519f76c4927?w=200' }
+        ]
+      },
+      {
+        id: 102,
+        tableNumber: 5,
+        timestamp: new Date(now - 1000 * 60 * 60 * 48).toISOString(),
+        status: 'completed',
+        total: 24.48,
+        items: [
+          { name: 'Caesar Salad', price: 8.99, quantity: 1, image: 'https://images.unsplash.com/photo-1546793665-c74683f339c1?w=200' },
+          { name: 'Fresh Lemonade', price: 3.99, quantity: 2, image: 'https://images.unsplash.com/photo-1523677011781-c91d1bbe2f4d?w=200' }
+        ]
+      },
+      {
+        id: 103,
+        tableNumber: 7,
+        timestamp: new Date(now - 1000 * 60 * 60 * 3).toISOString(),
+        status: 'preparing',
+        total: 14.99,
+        items: [
+          { name: 'Beef Burger', price: 14.99, quantity: 1, image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=200' }
+        ]
+      },
+      {
+        id: 104,
+        tableNumber: 1,
+        timestamp: new Date(now - 1000 * 60 * 60 * 72).toISOString(),
+        status: 'completed',
+        total: 20.98,
+        items: [
+          { name: 'Tiramisu', price: 6.99, quantity: 1, image: 'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=200' },
+          { name: 'Iced Coffee', price: 4.49, quantity: 2, image: 'https://images.unsplash.com/photo-1517487881594-2787fef5ebf7?w=200' }
+        ]
+      }
+    ];
+    setOrders(prev => {
+      const existingIds = new Set(prev.map(o => o.id));
+      const merged = [...prev, ...sample.filter(o => !existingIds.has(o.id))];
+      toast.success('Sample orders added');
+      return merged;
+    });
+  };
   
   const updateOrderStatus = (orderId, newStatus) => {
     setOrders(orders.map(order => 
@@ -25,7 +179,16 @@ const OrdersView = () => {
     if (filterStatus === 'active') {
       return orders.filter(o => ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status));
     }
-    return orders.filter(o => o.status === filterStatus);
+    const list = orders.filter(o => o.status === filterStatus);
+    if (filterStatus === 'completed' && (fromDate || toDate)) {
+      const fromMs = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : -Infinity;
+      const toMs = toDate ? new Date(`${toDate}T23:59:59`).getTime() : Infinity;
+      return list.filter(o => {
+        const t = new Date(o.timestamp).getTime();
+        return t >= fromMs && t <= toMs;
+      });
+    }
+    return list;
   };
   
   const filteredOrders = getFilteredOrders().sort((a, b) => 
@@ -84,6 +247,23 @@ const OrdersView = () => {
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Order Management</CardTitle>
+          <div className="mt-3 flex flex-wrap gap-3 items-center">
+            <Button className="btn-accent" onClick={addSampleOrders}>
+              Add Sample Orders
+            </Button>
+            {filterStatus === 'completed' && (
+              <div className="flex gap-3 items-end w-full md:w-auto">
+                <div className="w-40">
+                  <p className="text-xs text-muted-foreground mb-1">From</p>
+                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                </div>
+                <div className="w-40">
+                  <p className="text-xs text-muted-foreground mb-1">To</p>
+                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                </div>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {/* Filter Tabs */}
@@ -104,13 +284,13 @@ const OrdersView = () => {
               <TabsTrigger value="pending" className="relative">
                 Pending
                 {orderCounts.pending > 0 && (
-                  <Badge className="ml-2 bg-warning">{orderCounts.pending}</Badge>
+                  <Badge className="ml-2 bg-warning text-muted-foreground">{orderCounts.pending}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="completed">
                 Completed
                 {orderCounts.completed > 0 && (
-                  <Badge className="ml-2 bg-success">{orderCounts.completed}</Badge>
+                  <Badge className="ml-2 bg-success text-muted-foreground">{orderCounts.completed}</Badge>
                 )}
               </TabsTrigger>
             </TabsList>
@@ -159,8 +339,8 @@ const OrdersView = () => {
                     </div>
                     
                     <div className="pt-3 border-t flex items-center justify-between">
-                      <span className="font-bold text-xl text-primary">${order.total.toFixed(2)}</span>
-                      {order.status !== 'completed' && (
+                      <span className="font-bold text-xl text-primary">{formatCurrency(order.total)}</span>
+                      {order.status !== 'completed' ? (
                         <Button 
                           size="sm" 
                           onClick={(e) => {
@@ -170,6 +350,17 @@ const OrdersView = () => {
                           className="bg-primary"
                         >
                           {getNextStatusLabel(order.status)}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadInvoice(order);
+                          }}
+                        >
+                          Download Invoice
                         </Button>
                       )}
                     </div>
@@ -234,21 +425,21 @@ const OrdersView = () => {
                 <div className="bg-muted rounded-lg p-4 space-y-2">
                   <div className="flex justify-between">
                     <span>Subtotal</span>
-                    <span>${selectedOrder.total.toFixed(2)}</span>
+                    <span>{formatCurrency(selectedOrder.total)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Tax (10%)</span>
-                    <span>${(selectedOrder.total * 0.1).toFixed(2)}</span>
+                      <span>GST ({(gstRate * 100).toFixed(0)}%)</span>
+                    <span>{formatCurrency(selectedOrder.total * gstRate)}</span>
                   </div>
                   <div className="h-px bg-border my-2" />
                   <div className="flex justify-between font-bold text-lg">
-                    <span>Total</span>
-                    <span className="text-primary">${(selectedOrder.total * 1.1).toFixed(2)}</span>
+                    <span>Grand Total</span>
+                    <span className="text-primary">{formatCurrency(selectedOrder.total * (1 + gstRate))}</span>
                   </div>
                 </div>
                 
                 {/* Action Buttons */}
-                {selectedOrder.status !== 'completed' && (
+                {selectedOrder.status !== 'completed' ? (
                   <div className="flex gap-3">
                     <Button 
                       className="flex-1 bg-primary"
@@ -258,6 +449,22 @@ const OrdersView = () => {
                       }}
                     >
                       {getNextStatusLabel(selectedOrder.status)}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-3">
+                    <Button 
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => downloadInvoice(selectedOrder)}
+                    >
+                      Download Invoice
+                    </Button>
+                    <Button 
+                      className="flex-1 bg-primary"
+                      onClick={() => setSelectedOrder(null)}
+                    >
+                      Close
                     </Button>
                   </div>
                 )}

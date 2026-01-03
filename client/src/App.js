@@ -143,13 +143,17 @@ function App() {
     }))
   );
 
+  const [gstRate, setGstRate] = useState(0.05);
+
   const contextValue = {
     orders,
     setOrders,
     menuItems,
     setMenuItems,
     tables,
-    setTables
+    setTables,
+    gstRate,
+    setGstRate
   };
 
   return (

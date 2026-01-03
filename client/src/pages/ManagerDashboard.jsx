@@ -3,11 +3,12 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 // import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 // import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { LayoutDashboard, UtensilsCrossed, QrCode, ChefHat, Menu as MenuIcon } from 'lucide-react';
+import { LayoutDashboard, UtensilsCrossed, QrCode, ChefHat, Menu as MenuIcon, Settings as SettingsIcon } from 'lucide-react';
 import Dashboard from '../components/manager/Dashboard';
 import OrdersView from '../components/manager/OrdersView';
 import MenuManagement from '../components/manager/MenuManagement';
 import TableManagement from '../components/manager/TableManagement';
+import Settings from '../components/manager/Settings';
 
 const ManagerDashboard = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const ManagerDashboard = () => {
     { id: 'orders', label: 'Orders', icon: ChefHat, path: '/manager/orders' },
     { id: 'menu', label: 'Menu', icon: MenuIcon, path: '/manager/menu' },
     { id: 'tables', label: 'Tables', icon: QrCode, path: '/manager/tables' },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon, path: '/manager/settings' },
   ];
   
   return (
@@ -67,6 +69,7 @@ const ManagerDashboard = () => {
           <Route path="orders" element={<OrdersView />} />
           <Route path="menu" element={<MenuManagement />} />
           <Route path="tables" element={<TableManagement />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="/" element={<Navigate to="/manager/dashboard" replace />} />
         </Routes>
       </div>
