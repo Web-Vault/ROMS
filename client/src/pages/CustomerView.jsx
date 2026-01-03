@@ -10,11 +10,13 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { toast } from 'sonner';
-import { ShoppingCart, Plus, Minus, Utensils, Coffee, IceCream, CreditCard, Smartphone, Banknote, CheckCircle2, Clock } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Utensils, Coffee, IceCream, CreditCard, Smartphone, Banknote, CheckCircle2, Clock, ClipboardList } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const CustomerView = () => {
   const { tableId } = useParams();
-  const { orders, setOrders, menuItems } = useContext(AppContext);
+  const { orders, setOrders, menuItems, gstRate } = useContext(AppContext);
   
   const [orderStarted, setOrderStarted] = useState(false);
   const [cart, setCart] = useState([]);
@@ -23,8 +25,8 @@ const CustomerView = () => {
   const [showBill, setShowBill] = useState(false);
   const [customerDetails, setCustomerDetails] = useState({ name: '', phone: '' });
   const [paymentMethod, setPaymentMethod] = useState('card');
-  const [orderStatus, setOrderStatus] = useState('browsing'); // browsing, ordered, preparing, ready, completed
-  const [currentOrderId, setCurrentOrderId] = useState(null);
+  const [orderStatus, setOrderStatus] = useState('browsing');
+  const [sessionBatches, setSessionBatches] = useState([]);
   
   const categories = ['All', 'Appetizers', 'Main Course', 'Desserts', 'Beverages'];
   const [activeCategory, setActiveCategory] = useState('All');
@@ -64,9 +66,10 @@ const CustomerView = () => {
     }).filter(Boolean));
   };
   
-  const calculateTotal = () => {
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  };
+  const calculateCartTotal = () => cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const computeGrandSubtotal = () => sessionBatches.reduce((sum, b) => sum + b.total, 0);
+  const computeGrandGst = () => computeGrandSubtotal() * (gstRate || 0);
+  const computeGrandTotal = () => computeGrandSubtotal() + computeGrandGst();
   
   const placeOrder = () => {
     if (cart.length === 0) {
@@ -74,53 +77,133 @@ const CustomerView = () => {
       return;
     }
     
-    const newOrder = {
-      id: Date.now(),
-      tableNumber: parseInt(tableId),
-      items: cart,
-      total: calculateTotal(),
+    const id = Date.now();
+    const batch = {
+      id,
+      items: cart.map(i => ({ ...i, status: 'pending' })),
+      total: calculateCartTotal(),
       status: 'pending',
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
+    };
+    const newOrder = {
+      id,
+      tableNumber: parseInt(tableId),
+      items: cart.map(i => ({ ...i, status: 'pending' })),
+      total: calculateCartTotal(),
+      status: 'pending',
+      timestamp: batch.timestamp,
       customerName: customerDetails.name || 'Guest',
       customerPhone: customerDetails.phone || ''
     };
-    
+    setSessionBatches(prev => [...prev, batch]);
     setOrders([...orders, newOrder]);
-    setCurrentOrderId(newOrder.id);
     setOrderStatus('ordered');
     setShowCart(false);
-    toast.success(`Order ${currentOrderId} placed successfully! Waiting for confirmation...`);
+    setCart([]);
+    toast.success('Order placed. Waiting for confirmation...');
     
-    // Simulate order status updates
-    setTimeout(() => {
-      setOrderStatus('preparing');
-      toast.info('Order confirmed! Kitchen is preparing your food...');
-    }, 3000);
-    
-    setTimeout(() => {
-      setOrderStatus('ready');
-      toast.success('Your order is ready and being served!');
-    }, 8000);
+    batch.items.forEach((item, idx) => {
+      const prepareDelay = 2000 + idx * 1000;
+      const completeDelay = prepareDelay + 3000 + Math.floor(Math.random() * 2000);
+      setTimeout(() => {
+        setSessionBatches(prev => prev.map(b => {
+          if (b.id !== id) return b;
+          return {
+            ...b,
+            items: b.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'prepared' } : it)
+          };
+        }));
+        setOrders(prev => prev.map(o => {
+          if (o.id !== id) return o;
+          return {
+            ...o,
+            items: o.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'prepared' } : it),
+            status: 'preparing'
+          };
+        }));
+        setOrderStatus('preparing');
+      }, prepareDelay);
+      setTimeout(() => {
+        setSessionBatches(prev => prev.map(b => {
+          if (b.id !== id) return b;
+          return {
+            ...b,
+            items: b.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'completed' } : it)
+          };
+        }));
+        setOrders(prev => prev.map(o => {
+          if (o.id !== id) return o;
+          const allCompleted = o.items.every(it => it.status === 'completed');
+          return {
+            ...o,
+            items: o.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'completed' } : it),
+            status: allCompleted ? 'completed' : o.status
+          };
+        }));
+        const allCompletedNow = sessionBatches.find(b => b.id === id)?.items.every(it => it.status === 'completed');
+        if (allCompletedNow) setOrderStatus('completed');
+      }, completeDelay);
+    });
+  };
+
+  const finishOrder = () => {
+    if (sessionBatches.length === 0) {
+      toast.error('Place at least one order');
+      return;
+    }
+    setShowCheckout(true);
   };
   
-  // const finishOrder = () => {
-  //   if (cart.length > 0) {
-  //     toast.error('Please place your order first');
-  //     return;
-  //   }
-  //   setShowCheckout(true);
-  // };
-  
+  const generateInvoicePdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`Invoice - Table #${tableId}`, 14, 20);
+    doc.setFontSize(11);
+    doc.text(`Date: ${new Date().toLocaleString()}`, 14, 28);
+    const rows = [];
+    sessionBatches.forEach((b, idx) => {
+      b.items.forEach(it => {
+        rows.push([
+          `#${idx + 1}`,
+          it.name,
+          it.quantity,
+          `$${it.price.toFixed(2)}`,
+          `$${(it.price * it.quantity).toFixed(2)}`,
+          it.status.charAt(0).toUpperCase() + it.status.slice(1)
+        ]);
+      });
+    });
+    autoTable(doc, {
+      head: [['Batch', 'Item', 'Qty', 'Price', 'Subtotal', 'Status']],
+      body: rows,
+      startY: 36
+    });
+    const subtotal = computeGrandSubtotal();
+    const tax = computeGrandGst();
+    const total = computeGrandTotal();
+    const y = doc.lastAutoTable.finalY + 10;
+    doc.text(`Subtotal: $${subtotal.toFixed(2)}`, 14, y);
+    doc.text(`GST (${(gstRate*100).toFixed(0)}%): $${tax.toFixed(2)}`, 14, y + 6);
+    doc.text(`Total: $${total.toFixed(2)}`, 14, y + 12);
+    doc.save(`invoice_table_${tableId}_${Date.now()}.pdf`);
+  };
+
   const processPayment = () => {
     if (!customerDetails.name) {
       toast.error('Please enter your name');
       return;
     }
     
+    generateInvoicePdf();
     setShowCheckout(false);
-    setShowBill(true);
-    setOrderStatus('completed');
-    toast.success('Payment successful! Thank you for dining with us!');
+    setShowBill(false);
+    setOrderStatus('browsing');
+    setSessionBatches([]);
+    setCart([]);
+    setCustomerDetails({ name: '', phone: '' });
+    setPaymentMethod('card');
+    setOrderStarted(false);
+    toast.success('Payment successful. Invoice downloaded.');
   };
   
   const getStatusDisplay = () => {
@@ -128,7 +211,6 @@ const CustomerView = () => {
       browsing: { text: 'Browse Menu', color: 'bg-muted text-muted-foreground', icon: Utensils },
       ordered: { text: 'Order Placed - Awaiting Confirmation', color: 'bg-warning/10 text-warning border-warning/20', icon: Clock },
       preparing: { text: 'Kitchen is Preparing Your Order', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20', icon: Utensils },
-      ready: { text: 'Order Ready - Being Served', color: 'bg-success/10 text-success border-success/20', icon: CheckCircle2 },
       completed: { text: 'Order Completed', color: 'bg-primary/10 text-primary border-primary/20', icon: CheckCircle2 }
     };
     
@@ -180,20 +262,30 @@ const CustomerView = () => {
               <h1 className="text-2xl font-bold">Table #{tableId}</h1>
               <p className="text-sm text-muted-foreground">Select items from our menu</p>
             </div>
-            <Button 
-              onClick={() => setShowCart(true)} 
-              variant="outline" 
-              className="relative h-12 px-6"
-            >
-              <ShoppingCart className="mr-2 h-5 w-5" />
-              Cart
-              {cart.length > 0 && (
-                <Badge className="ml-2 bg-primary">{cart.length}</Badge>
+            <div className="flex items-center gap-2">
+              <Button 
+                onClick={() => setShowCart(true)} 
+                variant="outline" 
+                className="relative h-12 px-6"
+              >
+                <ShoppingCart className="mr-2 h-5 w-5" />
+                Cart
+                {cart.length > 0 && (
+                  <Badge className="ml-2 bg-primary">{cart.length}</Badge>
+                )}
+              </Button>
+              {sessionBatches.length > 0 && (
+                <Button 
+                  onClick={finishOrder}
+                  className="h-12 px-6 bg-primary"
+                >
+                  Finish & Get Bill
+                </Button>
               )}
-            </Button>
+            </div>
           </div>
           
-          {/* Status Banner */}
+          {/* Navigation */}
           {orderStatus !== 'browsing' && (
             <div className={`mt-4 p-4 rounded-lg border flex items-center gap-3 ${getStatusDisplay().color}`}>
               <StatusIcon className="h-5 w-5 flex-shrink-0" />
@@ -202,6 +294,56 @@ const CustomerView = () => {
           )}
         </div>
       </div>
+      
+      {/* Batches */}
+      {sessionBatches.length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 mt-6">
+          <div className="bg-card border rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ClipboardList className="h-5 w-5" />
+              <span className="font-semibold">Your Orders</span>
+            </div>
+            <div className="space-y-4">
+              {sessionBatches.map((b, idx) => (
+                <div key={b.id} className="rounded-md border">
+                  <div className="flex items-center justify-between p-3">
+                    <div className="flex items-center gap-4">
+                      <Badge variant="outline">Batch #{idx + 1}</Badge>
+                      <span className="text-muted-foreground">{new Date(b.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-medium">${b.total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="p-3 space-y-2">
+                    {b.items.map((it, iIdx) => (
+                      <div key={iIdx} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium">{it.quantity}x {it.name}</span>
+                          <span className="text-muted-foreground">${(it.price * it.quantity).toFixed(2)}</span>
+                        </div>
+                        <Badge className={
+                          it.status === 'pending' ? 'bg-warning' :
+                          it.status === 'prepared' ? 'bg-blue-500' :
+                          'bg-success'
+                        }>
+                          {it.status.charAt(0).toUpperCase() + it.status.slice(1)}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="flex justify-end pt-2">
+                <div className="text-sm text-muted-foreground">
+                  Subtotal: <span className="font-medium">${computeGrandSubtotal().toFixed(2)}</span> • GST ({(gstRate*100).toFixed(0)}%): <span className="font-medium">${computeGrandGst().toFixed(2)}</span> • Total: <span className="font-bold text-primary">${computeGrandTotal().toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Menu Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -331,16 +473,16 @@ const CustomerView = () => {
               <div className="space-y-2">
                 <div className="flex justify-between text-lg">
                   <span className="font-semibold">Subtotal</span>
-                  <span>${calculateTotal().toFixed(2)}</span>
+                  <span>${calculateCartTotal().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-lg">
-                  <span className="font-semibold">Tax (10%)</span>
-                  <span>${(calculateTotal() * 0.1).toFixed(2)}</span>
+                  <span className="font-semibold">GST ({(gstRate*100).toFixed(0)}%)</span>
+                  <span>${(calculateCartTotal() * (gstRate || 0)).toFixed(2)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between text-xl">
                   <span className="font-bold">Total</span>
-                  <span className="font-bold text-primary">${(calculateTotal() * 1.1).toFixed(2)}</span>
+                  <span className="font-bold text-primary">${(calculateCartTotal() * (1 + (gstRate || 0))).toFixed(2)}</span>
                 </div>
               </div>
               
@@ -420,7 +562,7 @@ const CustomerView = () => {
             <div className="bg-muted rounded-lg p-4 space-y-2">
               <div className="flex justify-between">
                 <span>Total Amount</span>
-                <span className="font-bold text-lg text-primary">${(calculateTotal() * 1.1).toFixed(2)}</span>
+                <span className="font-bold text-lg text-primary">${computeGrandTotal().toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -455,16 +597,16 @@ const CustomerView = () => {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Subtotal</span>
-                  <span>${calculateTotal().toFixed(2)}</span>
+                  <span>${computeGrandSubtotal().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Tax (10%)</span>
-                  <span>${(calculateTotal() * 0.1).toFixed(2)}</span>
+                  <span>GST ({(gstRate*100).toFixed(0)}%)</span>
+                  <span>${computeGrandGst().toFixed(2)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total Paid</span>
-                  <span className="text-primary">${(calculateTotal() * 1.1).toFixed(2)}</span>
+                  <span className="text-primary">${computeGrandTotal().toFixed(2)}</span>
                 </div>
               </div>
               

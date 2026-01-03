@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { Clock, CheckCircle2, ChefHat, TrendingUp } from 'lucide-react';
 import { Input } from '../ui/input';
 
@@ -99,7 +99,7 @@ const OrdersView = () => {
     const gst = order.total * gstRate;
     const grand = order.total + gst;
     const rows = order.items.map(i => [i.name, String(i.quantity), `$${i.price.toFixed(2)}`, `$${(i.price * i.quantity).toFixed(2)}`]);
-    doc.autoTable({
+    autoTable(doc, {
       startY: 36,
       head: [['Item','Qty','Price','Amount']],
       body: rows
