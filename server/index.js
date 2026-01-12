@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import connectDB from "./config/db.js";
+import managerRoutes from "./routes/managerRoutes.js";
+import notFound from "./middlewares/notFound.js";
+import errorHandler from "./middlewares/errorHandler.js";
 
 dotenv.config();
 
@@ -18,6 +21,13 @@ connectDB();
 app.get("/", (req, res) => {
   res.send("API is running...");
 });
+
+// Routes
+app.use("/api/manager", managerRoutes);
+
+// 404 and error handlers
+app.use(notFound);
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

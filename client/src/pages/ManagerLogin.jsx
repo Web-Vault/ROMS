@@ -17,18 +17,21 @@ const ManagerLogin = () => {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
 
-  const onLogin = () => {
+  const [loading, setLoading] = useState(false);
+  const onLogin = async () => {
     if (!email || !password) {
       toast.error('Enter email and password');
       return;
     }
-    const ok = loginManager(email, password);
-    if (ok) {
-      toast.success('Login successful');
-      navigate('/manager/dashboard', { replace: true });
-    } else {
+    setLoading(true);
+    const ok = await loginManager(email, password);
+    setLoading(false);
+    if (!ok) {
       toast.error('Invalid credentials');
+      return;
     }
+    toast.success('Login successful');
+    navigate('/manager/dashboard', { replace: true });
   };
 
   const sendReset = () => {
@@ -60,7 +63,9 @@ const ManagerLogin = () => {
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" />
           </div>
           <div className="flex items-center justify-between">
-            <Button className="bg-primary" onClick={onLogin}>Login</Button>
+            <Button className="bg-primary" onClick={onLogin} disabled={loading}>
+              {loading ? 'Logging in...' : 'Login'}
+            </Button>
             <Button variant="ghost" onClick={() => setShowForgot(true)}>Forgot password?</Button>
           </div>
         </CardContent>
