@@ -1,32 +1,40 @@
 import Order from "../models/Order.js";
 
 export const listOrders = async (req, res) => {
-  const { status } = req.query;
-  const q = status ? { status } : {};
-  const orders = await Order.find(q).sort({ timestamp: -1 }).lean();
-  res.json(orders);
+  try {
+    const { status } = req.query;
+    const q = status ? { status } : {};
+    const orders = await Order.find(q).sort({ timestamp: -1 }).lean();
+    res.json(orders);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to list orders" });
+  }
 };
 
 export const createOrder = async (req, res) => {
-  const { tableNumber, items, customerName, customerPhone } = req.body;
-  if (!tableNumber || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: "Invalid order" });
+  try {
+    const { tableNumber, items, customerName, customerPhone } = req.body;
+    if (!tableNumber || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Invalid order" });
+    }
+    const itemsWithStatus = items.map((it) => ({ ...it, status: "pending" }));
+    const total = itemsWithStatus.reduce(
+      (sum, it) => sum + it.price * it.quantity,
+      0
+    );
+    const order = await Order.create({
+      tableNumber,
+      items: itemsWithStatus,
+      total,
+      status: "pending",
+      timestamp: new Date(),
+      customerName: customerName || "Guest",
+      customerPhone: customerPhone || "",
+    });
+    res.status(201).json(order);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to create order" });
   }
-  const itemsWithStatus = items.map((it) => ({ ...it, status: "pending" }));
-  const total = itemsWithStatus.reduce(
-    (sum, it) => sum + it.price * it.quantity,
-    0
-  );
-  const order = await Order.create({
-    tableNumber,
-    items: itemsWithStatus,
-    total,
-    status: "pending",
-    timestamp: new Date(),
-    customerName: customerName || "Guest",
-    customerPhone: customerPhone || "",
-  });
-  res.status(201).json(order);
 };
 
 export const updateOrderStatus = async (req, res) => {

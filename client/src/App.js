@@ -17,6 +17,66 @@ function App() {
   const [isManagerAuthenticated, setIsManagerAuthenticated] = useState(
     !!localStorage.getItem('roms_token')
   );
+  React.useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [menuRes, tablesRes, ordersRes, settingsRes] = await Promise.all([
+          fetch('/api/menu'),
+          fetch('/api/tables'),
+          fetch('/api/orders'),
+          fetch('/api/settings')
+        ]);
+        const [menuJson, tablesJson, ordersJson, settingsJson] = await Promise.all([
+          menuRes.ok ? menuRes.json() : [],
+          tablesRes.ok ? tablesRes.json() : [],
+          ordersRes.ok ? ordersRes.json() : [],
+          settingsRes.ok ? settingsRes.json() : {}
+        ]);
+        setMenuItems((menuJson || []).map(i => ({ id: i._id || i.id, ...i })));
+        setTables((tablesJson || []).map(t => ({ id: t._id || t.id, ...t })));
+        setOrders((ordersJson || []).map(o => ({ id: o._id || o.id, ...o })));
+        if (settingsJson && typeof settingsJson.gstRate === 'number') {
+          setGstRate(settingsJson.gstRate);
+        }
+      } catch (e) {
+      }
+    };
+    loadData();
+  }, []);
+  
+  React.useEffect(() => {
+    const controller = new AbortController();
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/orders?t=${Date.now()}`, {
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          setOrders((json || []).map(o => ({ id: o._id || o.id, ...o })));
+        }
+      } catch (e) {
+      }
+    };
+    const interval = setInterval(poll, 5000);
+    poll();
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+    };
+  }, []);
+  React.useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/orders');
+        if (!res.ok) return;
+        const data = await res.json();
+        setOrders((data || []).map(o => ({ id: o._id || o.id, ...o })));
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
   const loginManager = async (email, password) => {
     try {
       const res = await fetch('/api/manager/login', {

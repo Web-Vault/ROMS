@@ -4,21 +4,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { QrCode, Users, Circle } from 'lucide-react';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 
 const TableManagement = () => {
-  const { tables, orders } = useContext(AppContext);
+  const { tables, orders, setTables } = useContext(AppContext);
   const [selectedTable, setSelectedTable] = useState(null);
   const [showQR, setShowQR] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [baseURL, setBaseURL] = useState();
+  const [showAdd, setShowAdd] = useState(false);
+  const [formNumber, setFormNumber] = useState('');
+  const [formCapacity, setFormCapacity] = useState('2');
 
-  const generateQRCode = async (tableId) => {
+  const generateQRCode = async (tableNumber) => {
     try {
-      const url = `${window.location.origin}/table/${tableId}`;
+      const url = `${window.location.origin}/table/${tableNumber}`;
       setBaseURL(url);
       console.log("Url:", url);
       const qrUrl = await QRCode.toDataURL(url, {
@@ -30,7 +35,7 @@ const TableManagement = () => {
         }
       });
       setQrCodeUrl(qrUrl);
-      setSelectedTable(tables.find(t => t.id === tableId));
+      setSelectedTable(tables.find(t => t.number === tableNumber));
       setShowQR(true);
     } catch (error) {
       toast.error('Failed to generate QR code');
@@ -51,6 +56,7 @@ const TableManagement = () => {
 
 
   const getTableStatus = (table) => {
+    if (table.status === 'reserved' || table.status === 'occupied') return table.status;
     const hasActiveOrder = orders.some(
       order => order.tableNumber === table.number &&
         ['pending', 'confirmed', 'preparing', 'ready'].includes(order.status)
@@ -80,6 +86,59 @@ const TableManagement = () => {
     available: tables.filter(t => getTableStatus(t) === 'available').length,
     occupied: tables.filter(t => getTableStatus(t) === 'occupied').length,
     reserved: tables.filter(t => t.status === 'reserved').length
+  };
+
+  const addTable = async () => {
+    const number = parseInt(formNumber, 10);
+    const capacity = parseInt(formCapacity, 10);
+    if (!Number.isInteger(number) || number <= 0) {
+      toast.error('Enter a valid table number');
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity <= 0) {
+      toast.error('Enter a valid capacity');
+      return;
+    }
+    if (tables.some(t => t.number === number)) {
+      toast.error('Table number already exists');
+      return;
+    }
+    try {
+      const res = await fetch('/api/tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number, capacity })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to add table');
+        return;
+      }
+      const created = await res.json();
+      const newTable = { id: created._id || created.id, ...created };
+      setTables([...tables, newTable]);
+      toast.success('Table added');
+    } catch {
+      toast.error('Failed to add table');
+    }
+    setShowAdd(false);
+    setFormNumber('');
+    setFormCapacity('2');
+  };
+
+  const removeTable = async (table) => {
+    try {
+      const res = await fetch(`/api/tables/${table.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to remove table');
+        return;
+      }
+      setTables(tables.filter(t => t.id !== table.id));
+      toast.success('Table removed');
+    } catch {
+      toast.error('Failed to remove table');
+    }
   };
 
   return (
@@ -123,8 +182,15 @@ const TableManagement = () => {
       {/* Tables Grid */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">Table Management</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">View and manage restaurant tables with QR codes</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-2xl">Table Management</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">View and manage restaurant tables with QR codes</p>
+            </div>
+            <Button onClick={() => setShowAdd(true)} className="bg-primary">
+              Add Table
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -152,10 +218,18 @@ const TableManagement = () => {
                     <Button
                       className="w-full bg-primary"
                       size="sm"
-                      onClick={() => generateQRCode(table.id)}
+                      onClick={() => generateQRCode(table.number)}
                     >
                       <QrCode className="h-4 w-4 mr-2" />
                       View QR
+                    </Button>
+                    <Button
+                      className="w-full"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => removeTable(table)}
+                    >
+                      Remove Table
                     </Button>
                   </CardContent>
                 </Card>
@@ -164,6 +238,30 @@ const TableManagement = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Add Table Dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-md w-[90vw] sm:w-auto">
+          <DialogHeader>
+            <DialogTitle>Add Table</DialogTitle>
+            <DialogDescription>Enter details to create a new table</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="table-number">Table Number</Label>
+              <Input id="table-number" type="number" value={formNumber} onChange={(e) => setFormNumber(e.target.value)} placeholder="e.g. 12" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="table-capacity">Capacity</Label>
+              <Input id="table-capacity" type="number" value={formCapacity} onChange={(e) => setFormCapacity(e.target.value)} placeholder="e.g. 4" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+              <Button className="bg-primary" onClick={addTable}>Add</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* QR Code Dialog */}
       <Dialog open={showQR} onOpenChange={setShowQR}>

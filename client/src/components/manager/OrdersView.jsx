@@ -167,11 +167,27 @@ const OrdersView = () => {
     });
   };
   
-  const updateOrderStatus = (orderId, newStatus) => {
-    setOrders(orders.map(order => 
-      order.id === orderId ? { ...order, status: newStatus } : order
-    ));
-    toast.success(`Order #${orderId} status updated to ${newStatus}`);
+  const updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to update status');
+        return;
+      }
+      const updated = await res.json();
+      const updatedId = updated._id || updated.id || orderId;
+      setOrders(orders.map(order => 
+        order.id === updatedId ? { ...order, ...updated, id: updatedId } : order
+      ));
+      toast.success(`Order #${orderId} status updated to ${newStatus}`);
+    } catch {
+      toast.error('Failed to update status');
+    }
   };
   
   const getFilteredOrders = () => {

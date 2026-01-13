@@ -16,7 +16,7 @@ import autoTable from 'jspdf-autotable';
 
 const CustomerView = () => {
   const { tableId } = useParams();
-  const { orders, setOrders, menuItems, gstRate } = useContext(AppContext);
+  const { orders, setOrders, menuItems, gstRate, setTables } = useContext(AppContext);
   
   const [orderStarted, setOrderStarted] = useState(false);
   const [cart, setCart] = useState([]);
@@ -71,79 +71,58 @@ const CustomerView = () => {
   const computeGrandGst = () => computeGrandSubtotal() * (gstRate || 0);
   const computeGrandTotal = () => computeGrandSubtotal() + computeGrandGst();
   
-  const placeOrder = () => {
+  const occupyTable = async () => {
+    try {
+      const num = parseInt(tableId, 10);
+      if (!Number.isInteger(num) || num <= 0) return;
+      await fetch(`/api/tables/number/${num}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'occupied' })
+      });
+      setTables(prev => prev.map(t => t.number === num ? { ...t, status: 'occupied' } : t));
+    } catch {}
+  };
+
+  const placeOrder = async () => {
     if (cart.length === 0) {
       toast.error('Your cart is empty');
       return;
     }
-    
-    const id = Date.now();
-    const batch = {
-      id,
-      items: cart.map(i => ({ ...i, status: 'pending' })),
-      total: calculateCartTotal(),
-      status: 'pending',
-      timestamp: new Date().toISOString()
-    };
-    const newOrder = {
-      id,
-      tableNumber: parseInt(tableId),
-      items: cart.map(i => ({ ...i, status: 'pending' })),
-      total: calculateCartTotal(),
-      status: 'pending',
-      timestamp: batch.timestamp,
-      customerName: customerDetails.name || 'Guest',
-      customerPhone: customerDetails.phone || ''
-    };
-    setSessionBatches(prev => [...prev, batch]);
-    setOrders([...orders, newOrder]);
-    setOrderStatus('ordered');
-    setShowCart(false);
-    setCart([]);
-    toast.success('Order placed. Waiting for confirmation...');
-    
-    batch.items.forEach((item, idx) => {
-      const prepareDelay = 2000 + idx * 1000;
-      const completeDelay = prepareDelay + 3000 + Math.floor(Math.random() * 2000);
-      setTimeout(() => {
-        setSessionBatches(prev => prev.map(b => {
-          if (b.id !== id) return b;
-          return {
-            ...b,
-            items: b.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'prepared' } : it)
-          };
-        }));
-        setOrders(prev => prev.map(o => {
-          if (o.id !== id) return o;
-          return {
-            ...o,
-            items: o.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'prepared' } : it),
-            status: 'preparing'
-          };
-        }));
-        setOrderStatus('preparing');
-      }, prepareDelay);
-      setTimeout(() => {
-        setSessionBatches(prev => prev.map(b => {
-          if (b.id !== id) return b;
-          return {
-            ...b,
-            items: b.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'completed' } : it)
-          };
-        }));
-        setOrders(prev => prev.map(o => {
-          if (o.id !== id) return o;
-          const allCompleted = o.items.every(it => it.status === 'completed');
-          return {
-            ...o,
-            items: o.items.map((it, iIdx) => iIdx === idx ? { ...it, status: 'completed' } : it),
-            status: allCompleted ? 'completed' : o.status
-          };
-        }));
-        const allCompletedNow = sessionBatches.find(b => b.id === id)?.items.every(it => it.status === 'completed');
-        if (allCompletedNow) setOrderStatus('completed');
-      }, completeDelay);
-    });
+    try {
+      const payload = {
+        tableNumber: parseInt(tableId, 10),
+        items: cart.map(i => ({ name: i.name, price: i.price, quantity: i.quantity })),
+        customerName: customerDetails.name || 'Guest',
+        customerPhone: customerDetails.phone || ''
+      };
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to place order');
+        return;
+      }
+      const created = await res.json();
+      const id = created._id || created.id;
+      setSessionBatches(prev => [...prev, {
+        id,
+        items: created.items,
+        total: created.total,
+        status: created.status,
+        timestamp: created.timestamp
+      }]);
+      setOrders([...orders, { id, ...created }]);
+      setOrderStatus('ordered');
+      setShowCart(false);
+      setCart([]);
+      toast.success('Order placed. Waiting for confirmation...');
+    } catch {
+      toast.error('Failed to place order');
+    }
   };
 
   const finishOrder = () => {
@@ -188,13 +167,24 @@ const CustomerView = () => {
     doc.save(`invoice_table_${tableId}_${Date.now()}.pdf`);
   };
 
-  const processPayment = () => {
+  const processPayment = async () => {
     if (!customerDetails.name) {
       toast.error('Please enter your name');
       return;
     }
     
     generateInvoicePdf();
+    try {
+      const active = [...orders].reverse().find(o => o.tableNumber === parseInt(tableId, 10) && o.status !== 'completed');
+      if (active) {
+        await fetch(`/api/orders/${active.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'completed' })
+        });
+        setOrders(orders.map(o => o.id === active.id ? { ...o, status: 'completed' } : o));
+      }
+    } catch {}
     setShowCheckout(false);
     setShowBill(false);
     setOrderStatus('browsing');
@@ -207,15 +197,35 @@ const CustomerView = () => {
   };
   
   const getStatusDisplay = () => {
+    const active = [...orders].reverse().find(o => o.tableNumber === parseInt(tableId, 10));
+    const preparedCount = active?.items?.filter(it => it.status === 'prepared').length || 0;
+    if (preparedCount > 0) {
+      return { text: `${preparedCount} item(s) serving soon`, color: 'bg-success/10 text-success border-success/20', icon: CheckCircle2 };
+    }
     const statusConfig = {
       browsing: { text: 'Browse Menu', color: 'bg-muted text-muted-foreground', icon: Utensils },
       ordered: { text: 'Order Placed - Awaiting Confirmation', color: 'bg-warning/10 text-warning border-warning/20', icon: Clock },
       preparing: { text: 'Kitchen is Preparing Your Order', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20', icon: Utensils },
+      ready: { text: 'Order Ready - Please proceed to pay', color: 'bg-green-500/10 text-green-600 border-green-500/20', icon: CheckCircle2 },
       completed: { text: 'Order Completed', color: 'bg-primary/10 text-primary border-primary/20', icon: CheckCircle2 }
     };
-    
     return statusConfig[orderStatus] || statusConfig.browsing;
   };
+
+  React.useEffect(() => {
+    const active = [...orders].reverse().find(o => o.tableNumber === parseInt(tableId, 10));
+    if (!active) return;
+    const anyPrepared = active.items && active.items.some(it => it.status === 'prepared');
+    if (active.status === 'pending' || active.status === 'confirmed') {
+      setOrderStatus(anyPrepared ? 'preparing' : 'ordered');
+    } else if (active.status === 'preparing') {
+      setOrderStatus('preparing');
+    } else if (active.status === 'ready') {
+      setOrderStatus('ready');
+    } else if (active.status === 'completed') {
+      setOrderStatus('completed');
+    }
+  }, [orders, tableId]);
   
   const StatusIcon = getStatusDisplay().icon;
   
@@ -240,7 +250,7 @@ const CustomerView = () => {
               </p>
             </div>
             <Button 
-              onClick={() => setOrderStarted(true)} 
+              onClick={() => { occupyTable(); setOrderStarted(true); }} 
               className="w-full h-14 text-lg bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-all"
               size="lg"
             >
@@ -371,11 +381,13 @@ const CustomerView = () => {
           {filteredMenu.map(item => (
             <Card key={item.id} className="overflow-hidden card-interactive">
               <div className="aspect-video relative overflow-hidden bg-muted">
-                <img 
-                  src={item.image} 
-                  alt={item.name} 
-                  className="w-full h-full object-cover"
-                />
+                {item.image ? (
+                  <img 
+                    src={item.image} 
+                    alt={item.name} 
+                    className="w-full h-full object-cover"
+                  />
+                ) : null}
                 {item.vegetarian && (
                   <Badge className="absolute top-2 right-2 bg-success">
                     Veg

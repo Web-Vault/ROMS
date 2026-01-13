@@ -154,11 +154,13 @@ const MenuManagement = () => {
               {filteredItems.map(item => (
                 <Card key={item.id} className="overflow-hidden card-interactive">
                   <div className="aspect-video relative overflow-hidden bg-muted">
-                    <img 
-                      src={item.image} 
-                      alt={item.name} 
-                      className="w-full h-full object-cover"
-                    />
+                    {item.image ? (
+                      <img 
+                        src={item.image} 
+                        alt={item.name} 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : null}
                     <div className="absolute top-2 right-2 flex gap-2">
                       {item.vegetarian && (
                         <Badge className="bg-success">Veg</Badge>
