@@ -21,6 +21,8 @@ export const createTable = async (req, res) => {
   }
   const table = await Table.create({ number: num, capacity: cap, status: 'available' });
   res.status(201).json(table);
+  const io = req.app.get('io');
+  if (io) io.emit('tables:updated');
 };
 
 export const deleteTable = async (req, res) => {
@@ -28,6 +30,8 @@ export const deleteTable = async (req, res) => {
   const table = await Table.findByIdAndDelete(id);
   if (!table) return res.status(404).json({ error: 'Not found' });
   res.json({ success: true });
+  const io = req.app.get('io');
+  if (io) io.emit('tables:updated');
 };
 
 export const updateTableStatusById = async (req, res) => {
@@ -39,6 +43,8 @@ export const updateTableStatusById = async (req, res) => {
   const table = await Table.findByIdAndUpdate(id, { status }, { new: true });
   if (!table) return res.status(404).json({ error: 'Not found' });
   res.json(table);
+  const io = req.app.get('io');
+  if (io) io.emit('tables:updated');
 };
 
 export const updateTableStatusByNumber = async (req, res) => {
@@ -54,4 +60,6 @@ export const updateTableStatusByNumber = async (req, res) => {
   const table = await Table.findOneAndUpdate({ number: num }, { status }, { new: true });
   if (!table) return res.status(404).json({ error: 'Not found' });
   res.json(table);
+  const io = req.app.get('io');
+  if (io) io.emit('tables:updated');
 };

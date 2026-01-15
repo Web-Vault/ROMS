@@ -5,6 +5,8 @@ import ManagerDashboard from './pages/ManagerDashboard';
 import ManagerLogin from './pages/ManagerLogin';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
+import socket from './socket';
+import axios from 'axios';
 
 export const AppContext = React.createContext();
 
@@ -21,17 +23,17 @@ function App() {
     const loadData = async () => {
       try {
         const [menuRes, tablesRes, ordersRes, settingsRes] = await Promise.all([
-          fetch('/api/menu'),
-          fetch('/api/tables'),
-          fetch('/api/orders'),
-          fetch('/api/settings')
+          axios.get('/api/menu'),
+          axios.get('/api/tables'),
+          axios.get('/api/orders'),
+          axios.get('/api/settings')
         ]);
-        const [menuJson, tablesJson, ordersJson, settingsJson] = await Promise.all([
-          menuRes.ok ? menuRes.json() : [],
-          tablesRes.ok ? tablesRes.json() : [],
-          ordersRes.ok ? ordersRes.json() : [],
-          settingsRes.ok ? settingsRes.json() : {}
-        ]);
+        const [menuJson, tablesJson, ordersJson, settingsJson] = [
+          menuRes?.data ?? [],
+          tablesRes?.data ?? [],
+          ordersRes?.data ?? [],
+          settingsRes?.data ?? {}
+        ];
         setMenuItems((menuJson || []).map(i => ({ id: i._id || i.id, ...i })));
         setTables((tablesJson || []).map(t => ({ id: t._id || t.id, ...t })));
         setOrders((ordersJson || []).map(o => ({ id: o._id || o.id, ...o })));
@@ -42,53 +44,49 @@ function App() {
       }
     };
     loadData();
-  }, []);
-  
-  React.useEffect(() => {
-    const controller = new AbortController();
-    const poll = async () => {
+    // Socket-driven refresh: fetch on server events
+    const refreshOrders = async () => {
       try {
-        const res = await fetch(`/api/orders?t=${Date.now()}`, {
-          signal: controller.signal,
-          headers: { 'Cache-Control': 'no-cache' }
-        });
-        if (res.ok) {
-          const json = await res.json();
-          setOrders((json || []).map(o => ({ id: o._id || o.id, ...o })));
-        }
-      } catch (e) {
-      }
-    };
-    const interval = setInterval(poll, 5000);
-    poll();
-    return () => {
-      controller.abort();
-      clearInterval(interval);
-    };
-  }, []);
-  React.useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/orders');
-        if (!res.ok) return;
-        const data = await res.json();
+        const res = await axios.get('/api/orders');
+        const data = res?.data ?? [];
         setOrders((data || []).map(o => ({ id: o._id || o.id, ...o })));
       } catch {}
-    }, 3000);
-    return () => clearInterval(interval);
+    };
+    const refreshTables = async () => {
+      try {
+        const res = await axios.get('/api/tables');
+        const data = res?.data ?? [];
+        setTables((data || []).map(t => ({ id: t._id || t.id, ...t })));
+      } catch {}
+    };
+    const onOrdersUpdated = () => { refreshOrders(); };
+    const onTablesUpdated = () => { refreshTables(); };
+    socket.on('orders:updated', onOrdersUpdated);
+    socket.on('order:itemUpdated', onOrdersUpdated);
+    socket.on('tables:updated', onTablesUpdated);
+    // Refresh on focus/visibility change
+    const onFocus = () => { refreshOrders(); refreshTables(); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') { refreshOrders(); refreshTables(); } };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      socket.off('orders:updated', onOrdersUpdated);
+      socket.off('order:itemUpdated', onOrdersUpdated);
+      socket.off('tables:updated', onTablesUpdated);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
+  
+
   const loginManager = async (email, password) => {
     try {
-      const res = await fetch('/api/manager/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      if (!res.ok) {
+      const res = await axios.post('/api/manager/login', { email, password });
+      if (!res || !res.data) {
         setIsManagerAuthenticated(false);
         return false;
       }
-      const data = await res.json();
+      const data = res.data;
       localStorage.setItem('roms_token', data.token || '');
       localStorage.setItem('roms_user', JSON.stringify({ email: data.email, _id: data._id }));
       setIsManagerAuthenticated(true);

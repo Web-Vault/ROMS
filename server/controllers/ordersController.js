@@ -32,6 +32,10 @@ export const createOrder = async (req, res) => {
       customerPhone: customerPhone || "",
     });
     res.status(201).json(order);
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('orders:updated');
+    }
   } catch (e) {
     res.status(500).json({ error: "Failed to create order" });
   }
@@ -43,6 +47,10 @@ export const updateOrderStatus = async (req, res) => {
   const order = await Order.findByIdAndUpdate(id, { status }, { new: true });
   if (!order) return res.status(404).json({ error: "Not found" });
   res.json(order);
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('orders:updated');
+  }
 };
 
 export const updateItemStatus = async (req, res) => {
@@ -58,4 +66,9 @@ export const updateItemStatus = async (req, res) => {
   if (allCompleted) order.status = "completed";
   await order.save();
   res.json(order);
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('orders:updated');
+    io.emit('order:itemUpdated', { orderId: String(order._id) });
+  }
 };

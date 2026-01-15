@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { ShoppingCart, Plus, Minus, Utensils, Coffee, IceCream, CreditCard, Smartphone, Banknote, CheckCircle2, Clock, ClipboardList } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import axios from 'axios';
 
 const CustomerView = () => {
   const { tableId } = useParams();
@@ -74,13 +75,13 @@ const CustomerView = () => {
   const occupyTable = async () => {
     try {
       const num = parseInt(tableId, 10);
-      if (!Number.isInteger(num) || num <= 0) return;
-      await fetch(`/api/tables/number/${num}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'occupied' })
-      });
-      setTables(prev => prev.map(t => t.number === num ? { ...t, status: 'occupied' } : t));
+      if (!Number.isInteger(num) || num <= 0) {
+        return;
+      }
+      await axios.patch(`/api/tables/number/${num}/status`, { status: 'occupied' });
+      const res = await axios.get('/api/tables');
+      const data = res?.data ?? [];
+      setTables((data || []).map(t => ({ id: t._id || t.id, ...t })));
     } catch {}
   };
 
@@ -96,17 +97,12 @@ const CustomerView = () => {
         customerName: customerDetails.name || 'Guest',
         customerPhone: customerDetails.phone || ''
       };
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || 'Failed to place order');
+      const res = await axios.post('/api/orders', payload);
+      const created = res?.data;
+      if (!created) {
+        toast.error('Failed to place order');
         return;
       }
-      const created = await res.json();
       const id = created._id || created.id;
       setSessionBatches(prev => [...prev, {
         id,
@@ -116,6 +112,9 @@ const CustomerView = () => {
         timestamp: created.timestamp
       }]);
       setOrders([...orders, { id, ...created }]);
+      const refresh = await axios.get('/api/orders');
+      const data = refresh?.data ?? [];
+      setOrders((data || []).map(o => ({ id: o._id || o.id, ...o })));
       setOrderStatus('ordered');
       setShowCart(false);
       setCart([]);
@@ -177,12 +176,15 @@ const CustomerView = () => {
     try {
       const active = [...orders].reverse().find(o => o.tableNumber === parseInt(tableId, 10) && o.status !== 'completed');
       if (active) {
-        await fetch(`/api/orders/${active.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'completed' })
-        });
-        setOrders(orders.map(o => o.id === active.id ? { ...o, status: 'completed' } : o));
+        await axios.patch(`/api/orders/${active.id}/status`, { status: 'completed' });
+        const ordersRes = await axios.get('/api/orders');
+        const latest = ordersRes?.data ?? [];
+        setOrders((latest || []).map(o => ({ id: o._id || o.id, ...o })));
+        const num = parseInt(tableId, 10);
+        await axios.patch(`/api/tables/number/${num}/status`, { status: 'available' });
+        const tablesRes = await axios.get('/api/tables');
+        const latestTables = tablesRes?.data ?? [];
+        setTables((latestTables || []).map(t => ({ id: t._id || t.id, ...t })));
       }
     } catch {}
     setShowCheckout(false);
@@ -226,6 +228,25 @@ const CustomerView = () => {
       setOrderStatus('completed');
     }
   }, [orders, tableId]);
+  
+  // Keep sessionBatches in sync with latest orders (items statuses, totals, timestamps)
+  React.useEffect(() => {
+    if (!sessionBatches || sessionBatches.length === 0) return;
+    const map = new Map(orders.map(o => [String(o.id), o]));
+    let changed = false;
+    const next = sessionBatches.map(b => {
+      const o = map.get(String(b.id));
+      if (!o) return b;
+      // Only update if something changed to avoid unnecessary renders
+      const shouldUpdate = b.total !== o.total || b.status !== o.status || b.timestamp !== o.timestamp || (Array.isArray(b.items) && Array.isArray(o.items) && b.items.length !== o.items.length) ;
+      if (shouldUpdate) {
+        changed = true;
+        return { ...b, items: o.items, total: o.total, status: o.status, timestamp: o.timestamp };
+      }
+      return b;
+    });
+    if (changed) setSessionBatches(next);
+  }, [orders, sessionBatches]);
   
   const StatusIcon = getStatusDisplay().icon;
   

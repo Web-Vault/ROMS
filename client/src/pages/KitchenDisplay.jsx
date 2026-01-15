@@ -5,6 +5,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { ChefHat, CheckCircle2, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+import axios from 'axios';
 
 const KitchenDisplay = () => {
   const { orders, setOrders } = useContext(AppContext);
@@ -17,19 +18,17 @@ const KitchenDisplay = () => {
         toast.error('This order is a sample and cannot be updated');
         return;
       }
-      const res = await fetch(`/api/orders/${order.id}/items/${index}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || 'Failed to update item');
+      const res = await axios.patch(`/api/orders/${order.id}/items/${index}/status`, { status });
+      const updated = res?.data;
+      if (!updated) {
+        toast.error('Failed to update item');
         return;
       }
-      const updated = await res.json();
       const updatedId = updated._id || updated.id || order.id;
       setOrders(orders.map(o => o.id === updatedId ? { id: updatedId, ...updated } : o));
+      const refresh = await axios.get('/api/orders');
+      const data = refresh?.data ?? [];
+      setOrders((data || []).map(o => ({ id: o._id || o.id, ...o })));
       toast.success(`Item updated to ${status}`);
     } catch {
       toast.error('Failed to update item');

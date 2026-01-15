@@ -11,6 +11,8 @@ import metricsRoutes from "./routes/metrics.js";
 import notFound from "./middlewares/notFound.js";
 import errorHandler from "./middlewares/errorHandler.js";
 import morgan from "morgan";
+import http from "http";
+import { Server as SocketIOServer } from "socket.io";
 
 dotenv.config();
 
@@ -42,5 +44,18 @@ app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
+// Create HTTP server and attach Socket.IO
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  cors: { origin: "*" }
+});
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Make io available in route handlers/controllers via req.app.get('io')
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  // Optional: join rooms by role/view if needed in future
+  socket.on('disconnect', () => {});
+});
+
+server.listen(PORT, () => console.log(`Server + Socket.IO running on port ${PORT}`));

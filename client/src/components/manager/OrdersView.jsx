@@ -10,9 +10,10 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Clock, CheckCircle2, ChefHat, TrendingUp } from 'lucide-react';
 import { Input } from '../ui/input';
+import axios from 'axios';
 
 const OrdersView = () => {
-  const { orders, setOrders, gstRate } = useContext(AppContext);
+  const { orders, setOrders, gstRate, tables, setTables } = useContext(AppContext);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [fromDate, setFromDate] = useState('');
@@ -169,21 +170,22 @@ const OrdersView = () => {
   
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || 'Failed to update status');
+      const res = await axios.patch(`/api/orders/${orderId}/status`, { status: newStatus });
+      const updated = res?.data;
+      if (!updated) {
+        toast.error('Failed to update status');
         return;
       }
-      const updated = await res.json();
       const updatedId = updated._id || updated.id || orderId;
       setOrders(orders.map(order => 
         order.id === updatedId ? { ...order, ...updated, id: updatedId } : order
       ));
+      const ordersRes = await axios.get('/api/orders');
+      const latestOrders = ordersRes?.data ?? [];
+      setOrders((latestOrders || []).map(o => ({ id: o._id || o.id, ...o })));
+      const tablesRes = await axios.get('/api/tables');
+      const latestTables = tablesRes?.data ?? [];
+      setTables((latestTables || []).map(t => ({ id: t._id || t.id, ...t })));
       toast.success(`Order #${orderId} status updated to ${newStatus}`);
     } catch {
       toast.error('Failed to update status');
@@ -264,9 +266,6 @@ const OrdersView = () => {
         <CardHeader>
           <CardTitle className="text-2xl">Order Management</CardTitle>
           <div className="mt-3 flex flex-wrap gap-3 items-center">
-            <Button className="btn-accent" onClick={addSampleOrders}>
-              Add Sample Orders
-            </Button>
             {filterStatus === 'completed' && (
               <div className="flex gap-3 items-end w-full md:w-auto">
                 <div className="w-40">
