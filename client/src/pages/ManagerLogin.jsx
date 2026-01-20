@@ -16,6 +16,9 @@ const ManagerLogin = () => {
   const [password, setPassword] = useState('');
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
+  const [step, setStep] = useState(1);
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   const [loading, setLoading] = useState(false);
   const onLogin = async () => {
@@ -34,13 +37,79 @@ const ManagerLogin = () => {
     navigate('/manager/dashboard', { replace: true });
   };
 
-  const sendReset = () => {
+  const resetState = () => {
+    setStep(1);
+    setOtp('');
+    setNewPassword('');
+    setForgotEmail('');
+    setShowForgot(false);
+  };
+
+  const sendReset = async () => {
     if (!forgotEmail) {
       toast.error('Enter your email');
       return;
     }
-    toast.success('Password reset link sent to email');
-    setShowForgot(false);
+    try {
+      const res = await fetch('/api/manager/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || 'Failed to send OTP');
+        return;
+      }
+      toast.success('OTP sent to email');
+      setStep(2);
+    } catch {
+      toast.error('Error sending OTP');
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!otp) {
+      toast.error('Enter OTP');
+      return;
+    }
+    try {
+      const res = await fetch('/api/manager/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail, otp })
+      });
+      if (!res.ok) {
+        toast.error('Invalid OTP');
+        return;
+      }
+      toast.success('OTP verified');
+      setStep(3);
+    } catch {
+      toast.error('Error verifying OTP');
+    }
+  };
+
+  const resetPassword = async () => {
+    if (!newPassword) {
+      toast.error('Enter new password');
+      return;
+    }
+    try {
+      const res = await fetch('/api/manager/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail, otp, newPassword })
+      });
+      if (!res.ok) {
+        toast.error('Failed to reset password');
+        return;
+      }
+      toast.success('Password reset successful. Please login.');
+      resetState();
+    } catch {
+      toast.error('Error resetting password');
+    }
   };
 
   return (
@@ -71,19 +140,50 @@ const ManagerLogin = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={showForgot} onOpenChange={setShowForgot}>
+      <Dialog open={showForgot} onOpenChange={(open) => {
+        if (!open) resetState();
+        else setShowForgot(true);
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Reset Password</DialogTitle>
-            <DialogDescription>Enter your email to receive reset instructions</DialogDescription>
+            <DialogDescription>
+              {step === 1 && 'Enter your email to receive OTP'}
+              {step === 2 && 'Enter the OTP sent to your email'}
+              {step === 3 && 'Enter your new password'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <Label htmlFor="forgot-email">Email</Label>
-            <Input id="forgot-email" type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="manager@example.com" />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowForgot(false)}>Cancel</Button>
-              <Button className="bg-primary" onClick={sendReset}>Send Link</Button>
-            </div>
+            {step === 1 && (
+              <>
+                <Label htmlFor="forgot-email">Email</Label>
+                <Input id="forgot-email" type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="manager@example.com" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={resetState}>Cancel</Button>
+                  <Button className="bg-primary" onClick={sendReset}>Send OTP</Button>
+                </div>
+              </>
+            )}
+            {step === 2 && (
+              <>
+                <Label htmlFor="otp">OTP</Label>
+                <Input id="otp" type="text" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="Enter 6-digit OTP" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
+                  <Button className="bg-primary" onClick={verifyOtp}>Verify OTP</Button>
+                </div>
+              </>
+            )}
+            {step === 3 && (
+              <>
+                <Label htmlFor="new-password">New Password</Label>
+                <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={resetState}>Cancel</Button>
+                  <Button className="bg-primary" onClick={resetPassword}>Reset Password</Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>

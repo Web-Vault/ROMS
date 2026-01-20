@@ -21,6 +21,12 @@ const managerSchema = new mongoose.Schema(
         type: String,
         default: "Manager",
     },
+    resetOtp: {
+      type: String,
+    },
+    resetOtpExpire: {
+      type: Date,
+    },
   },
   { timestamps: true }
 );
