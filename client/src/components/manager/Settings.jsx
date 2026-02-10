@@ -47,14 +47,24 @@ const Settings = () => {
     return { totalOrders, completedOrders, activeOrders, totalRevenue, gstCollected, grandIncome };
   }, [orders, gstRate]);
 
-  const handleGstUpdate = () => {
+  const handleGstUpdate = async () => {
     const value = parseFloat(localGst);
     if (isNaN(value) || value < 0 || value > 1) {
       toast.error('Enter GST as a decimal between 0 and 1');
       return;
     }
-    setGstRate(value);
-    toast.success('GST rate updated');
+    try {
+      const res = await fetch('/api/settings/gst-rate', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      });
+      if (!res.ok) throw new Error();
+      setGstRate(value);
+      toast.success('GST rate updated');
+    } catch {
+      toast.error('Failed to update GST rate');
+    }
   };
 
   const downloadRangeData = () => {

@@ -61,7 +61,7 @@ const MenuManagement = () => {
     setShowDialog(true);
   };
   
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || !formData.price) {
       toast.error('Please fill in all required fields');
       return;
@@ -73,33 +73,98 @@ const MenuManagement = () => {
       image: formData.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400'
     };
     
-    if (editingItem) {
-      setMenuItems(menuItems.map(item => 
-        item.id === editingItem.id ? { ...item, ...itemData } : item
-      ));
-      toast.success('Menu item updated successfully');
-    } else {
-      const newItem = {
-        id: Date.now(),
-        ...itemData
-      };
-      setMenuItems([...menuItems, newItem]);
-      toast.success('Menu item added successfully');
+    try {
+      if (editingItem) {
+        const response = await fetch(`/api/menu/${editingItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(itemData)
+        });
+        
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.message || 'Failed to update item');
+        }
+        
+        const updatedItem = await response.json();
+        // Ensure id property exists for frontend compatibility
+        const normalizedItem = { id: updatedItem._id, ...updatedItem };
+        
+        setMenuItems(menuItems.map(item => 
+          item.id === editingItem.id ? normalizedItem : item
+        ));
+        toast.success('Menu item updated successfully');
+      } else {
+        const response = await fetch('/api/menu', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(itemData)
+        });
+        
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.message || 'Failed to create item');
+        }
+        
+        const newItem = await response.json();
+        // Ensure id property exists for frontend compatibility
+        const normalizedItem = { id: newItem._id, ...newItem };
+        
+        setMenuItems([...menuItems, normalizedItem]);
+        toast.success('Menu item added successfully');
+      }
+      
+      setShowDialog(false);
+      resetForm();
+    } catch (error) {
+      console.error('Error saving menu item:', error);
+      toast.error(error.message);
     }
+  };
+  
+  const handleDelete = async (id) => {
+    try {
+      const response = await fetch(`/api/menu/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete item');
+      }
+      
+      setMenuItems(menuItems.filter(item => item.id !== id));
+      toast.success('Menu item deleted');
+    } catch (error) {
+      console.error('Error deleting menu item:', error);
+      toast.error('Failed to delete menu item');
+    }
+  };
+  
+  const toggleAvailability = async (id) => {
+    const item = menuItems.find(i => i.id === id);
+    if (!item) return;
     
-    setShowDialog(false);
-    resetForm();
-  };
-  
-  const handleDelete = (id) => {
-    setMenuItems(menuItems.filter(item => item.id !== id));
-    toast.success('Menu item deleted');
-  };
-  
-  const toggleAvailability = (id) => {
-    setMenuItems(menuItems.map(item => 
-      item.id === id ? { ...item, available: !item.available } : item
-    ));
+    try {
+      const response = await fetch(`/api/menu/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ available: !item.available })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update availability');
+      }
+      
+      const updatedItem = await response.json();
+      const normalizedItem = { id: updatedItem._id, ...updatedItem };
+      
+      setMenuItems(menuItems.map(i => 
+        i.id === id ? normalizedItem : i
+      ));
+    } catch (error) {
+      console.error('Error updating availability:', error);
+      toast.error('Failed to update availability');
+    }
   };
   
   const filteredItems = filterCategory === 'All' 
