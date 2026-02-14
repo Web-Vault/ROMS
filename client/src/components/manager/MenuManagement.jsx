@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../ui/switch';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2, UtensilsCrossed } from 'lucide-react';
+import axios from 'axios';
 
 const MenuManagement = () => {
   const { menuItems, setMenuItems } = useContext(AppContext);
@@ -75,18 +76,7 @@ const MenuManagement = () => {
     
     try {
       if (editingItem) {
-        const response = await fetch(`/api/menu/${editingItem.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(itemData)
-        });
-        
-        if (!response.ok) {
-          const err = await response.json();
-          throw new Error(err.message || 'Failed to update item');
-        }
-        
-        const updatedItem = await response.json();
+        const { data: updatedItem } = await axios.put(`/api/menu/${editingItem.id}`, itemData);
         // Ensure id property exists for frontend compatibility
         const normalizedItem = { id: updatedItem._id, ...updatedItem };
         
@@ -95,18 +85,7 @@ const MenuManagement = () => {
         ));
         toast.success('Menu item updated successfully');
       } else {
-        const response = await fetch('/api/menu', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(itemData)
-        });
-        
-        if (!response.ok) {
-          const err = await response.json();
-          throw new Error(err.message || 'Failed to create item');
-        }
-        
-        const newItem = await response.json();
+        const { data: newItem } = await axios.post('/api/menu', itemData);
         // Ensure id property exists for frontend compatibility
         const normalizedItem = { id: newItem._id, ...newItem };
         
@@ -124,13 +103,7 @@ const MenuManagement = () => {
   
   const handleDelete = async (id) => {
     try {
-      const response = await fetch(`/api/menu/${id}`, {
-        method: 'DELETE'
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete item');
-      }
+      await axios.delete(`/api/menu/${id}`);
       
       setMenuItems(menuItems.filter(item => item.id !== id));
       toast.success('Menu item deleted');
@@ -145,17 +118,7 @@ const MenuManagement = () => {
     if (!item) return;
     
     try {
-      const response = await fetch(`/api/menu/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ available: !item.available })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update availability');
-      }
-      
-      const updatedItem = await response.json();
+      const { data: updatedItem } = await axios.put(`/api/menu/${id}`, { available: !item.available });
       const normalizedItem = { id: updatedItem._id, ...updatedItem };
       
       setMenuItems(menuItems.map(i => 

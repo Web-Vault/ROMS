@@ -10,6 +10,7 @@ import { Separator } from '../ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import axios from 'axios';
 
 const Settings = () => {
   const { orders, gstRate, setGstRate } = useContext(AppContext);
@@ -54,12 +55,7 @@ const Settings = () => {
       return;
     }
     try {
-      const res = await fetch('/api/settings/gst-rate', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value })
-      });
-      if (!res.ok) throw new Error();
+      await axios.patch('/api/settings/gst-rate', { value });
       setGstRate(value);
       toast.success('GST rate updated');
     } catch {
