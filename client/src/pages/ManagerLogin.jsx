@@ -52,8 +52,13 @@ const ManagerLogin = () => {
       return;
     }
     try {
-      await axios.post('/api/manager/forgot-password', { email: forgotEmail });
+      const res = await axios.post('/api/manager/forgot-password', { email: forgotEmail });
+      const data = res?.data || {};
       toast.success('OTP sent to email');
+      if (data.previewUrl) {
+        toast.info('Dev email preview URL available in server logs');
+        console.log('Email preview URL:', data.previewUrl);
+      }
       setStep(2);
     } catch {
       toast.error('Error sending OTP');
